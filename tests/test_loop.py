@@ -4,6 +4,7 @@ from pathlib import Path
 from swarm_harness import cli
 from swarm_harness.config import Config
 from swarm_harness.llm import ChatResult, ToolCall
+from swarm_harness.worker import WorkerResult
 from swarm_harness.loop import RunResult, run_task
 
 
@@ -130,6 +131,56 @@ def test_run_command_timeout_is_reported_and_run_can_finish(tmp_path: Path) -> N
     transcript_text = (tmp_path / "transcript.jsonl").read_text()
     assert result.status == "completed"
     assert "timed out" in transcript_text
+
+
+def test_spawn_worker_tool_reports_worker_result(monkeypatch, tmp_path: Path) -> None:
+    fake_llm = FakeLLM(
+        [
+            chat_with_tools(
+                tool_call(
+                    "call_worker",
+                    "spawn_worker",
+                    {"task": "создай out.txt", "worker_id": ""},
+                )
+            ),
+            chat_with_tools(tool_call("call_finish", "finish", {"result": "done"})),
+        ]
+    )
+
+    def fake_spawn_codex_worker(
+        task: str,
+        worker_id: str,
+        run_dir: Path,
+        config: Config,
+    ) -> WorkerResult:
+        assert task == "создай out.txt"
+        assert worker_id == "worker-01"
+        assert run_dir == tmp_path
+        assert config.api_key == "test"
+        return WorkerResult(
+            worker_id=worker_id,
+            ok=True,
+            message="готово",
+            files=["out.txt"],
+            workspace=tmp_path / "workers" / worker_id,
+        )
+
+    monkeypatch.setattr(
+        "swarm_harness.loop.spawn_codex_worker",
+        fake_spawn_codex_worker,
+    )
+
+    result = run_task(
+        "delegate",
+        Config(api_key="test", max_iterations=5),
+        fake_llm,
+        run_dir=tmp_path,
+    )
+
+    transcript_text = (tmp_path / "transcript.jsonl").read_text()
+    assert result.status == "completed"
+    assert "ok=true" in transcript_text
+    assert "out.txt" in transcript_text
 
 
 def test_cli_run_prints_status_result_and_exit_code(

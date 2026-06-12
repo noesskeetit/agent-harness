@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from swarm_harness.config import Config
+from swarm_harness.worker import WorkerResult, spawn_codex_worker
 
 
 DRIVER_SYSTEM = """Ты драйвер-оркестратор swarm-harness.
@@ -79,10 +80,23 @@ def _finish(result: str) -> str:
     return result
 
 
+def _spawn_worker(
+    task: str,
+    worker_id: str = "",
+    *,
+    run_dir: Path,
+    config: Config,
+) -> str:
+    actual_worker_id = worker_id or _next_worker_id(run_dir)
+    result = spawn_codex_worker(task, actual_worker_id, run_dir, config)
+    return _format_worker_result(result)
+
+
 TOOLS: dict[str, Callable[..., str]] = {
     "run_command": _run_command,
     "read_file": _read_file,
     "write_file": _write_file,
+    "spawn_worker": _spawn_worker,
     "finish": _finish,
 }
 
@@ -138,6 +152,30 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "spawn_worker",
+            "description": (
+                "Делегируй самодостаточную подзадачу автономному "
+                "воркеру-исполнителю; воркер работает в изолированной "
+                "директории и не видит твой контекст — формулируй задачу "
+                "полностью, включая пути и критерии готовности."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string"},
+                    "worker_id": {
+                        "type": "string",
+                        "description": "Необязательный id; пусто для worker-01, worker-02, ...",
+                    },
+                },
+                "required": ["task"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "finish",
             "description": "Завершить ран и вернуть итог пользователю.",
             "parameters": {
@@ -184,6 +222,7 @@ def run_task(
                     call.arguments,
                     actual_run_dir,
                     command_timeout,
+                    config,
                 )
                 limited_output = _limit_tool_output(
                     output,
@@ -231,6 +270,7 @@ def _execute_tool(
     arguments: dict[str, Any],
     run_dir: Path,
     command_timeout: int,
+    config: Config,
 ) -> tuple[str, str | None]:
     tool = TOOLS.get(name)
     if tool is None:
@@ -246,6 +286,9 @@ def _execute_tool(
             return output, None
         if name in {"read_file", "write_file"}:
             output = tool(run_dir=run_dir, **arguments)
+            return output, None
+        if name == "spawn_worker":
+            output = tool(run_dir=run_dir, config=config, **arguments)
             return output, None
         output = tool(**arguments)
     except Exception as exc:
@@ -302,6 +345,24 @@ def _limit_tool_output(
 
 def _safe_tool_name(tool_name: str) -> str:
     return "".join(char if char.isalnum() or char in "-_" else "_" for char in tool_name)
+
+
+def _next_worker_id(run_dir: Path) -> str:
+    workers_dir = run_dir / "workers"
+    index = 1
+    while (workers_dir / f"worker-{index:02d}").exists():
+        index += 1
+    return f"worker-{index:02d}"
+
+
+def _format_worker_result(result: WorkerResult) -> str:
+    files = "\n".join(f"- {path}" for path in result.files)
+    return (
+        f"worker={result.worker_id} ok={str(result.ok).lower()} "
+        f"workspace={result.workspace}\n"
+        f"files:\n{files}\n"
+        f"message:\n{result.message}"
+    )
 
 
 def _resolve_path(path: str, run_dir: Path) -> Path:
