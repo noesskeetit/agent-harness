@@ -252,6 +252,8 @@ def _manus_env(config: Config, home_dir: Path, workspace_root: Path) -> dict[str
     # должен быть виден в коде, а не держаться на side effect).
     env["MANUS_TG_BOT_TOKEN"] = ""
     env["MANUS_TG_USER_ID"] = ""
+    if config.vlm_base:
+        env["MANUS_VLM_BASE"] = config.vlm_base
     env["LLM_BASE_URL"] = config.base_url
     env["OPENAI_BASE_URL"] = config.base_url
     _merge_no_proxy(env, config.base_url)

@@ -19,6 +19,7 @@ class Config:
     worker_timeout: int = 1800
     max_parallel_workers: int = 4
     worker_proxy: str = ""
+    vlm_base: str = ""
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = ".env") -> "Config":
@@ -49,4 +50,5 @@ class Config:
                 )
             ),
             worker_proxy=os.getenv("SWARM_WORKER_PROXY", cls.worker_proxy),
+            vlm_base=os.getenv("SWARM_VLM_BASE", cls.vlm_base),
         )
