@@ -3,11 +3,31 @@ import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from swarm_harness.config import Config
 
 
 LOG_TAIL_CHARS = 2000
+MANUS_AGENT_PATH = Path.home() / "Code" / "manus-agent"
+MANUS_GROUPS = "file,memory,shell,code,todo,skills,lifecycle"
+MANUS_MODEL_ALIASES = {
+    "moonshotai/Kimi-K2.6": "kimi26",
+    "deepseek-ai/DeepSeek-V4-Pro": "deepseek-v4-pro",
+    "Qwen/Qwen3-Coder-Next": "qwen-coder",
+    "MiniMaxAI/MiniMax-M2": "minimax",
+    "zai-org/GLM-4.7": "glm",
+    "qwen36-27b-fp8": "qwen35-vlm",
+}
+MANUS_SERVICE_PATHS = {
+    ("todo.md",),
+    ("journal.md",),
+    ("session.jsonl",),
+    ("state.json",),
+    ("summary.md",),
+    ("events",),
+    ("observations",),
+}
 
 
 @dataclass
@@ -108,6 +128,109 @@ def spawn_codex_worker(
     )
 
 
+def spawn_manus_worker(
+    task: str,
+    worker_id: str,
+    run_dir: Path,
+    config: Config,
+) -> WorkerResult:
+    workspace = run_dir / "workers" / worker_id
+    worker_dir = workspace / ".worker"
+    workspace.mkdir(parents=True, exist_ok=True)
+    worker_dir.mkdir(parents=True, exist_ok=True)
+
+    task_path = workspace / "task.md"
+    summary_path = workspace / "summary.md"
+    log_path = worker_dir / "manus_output.log"
+    task_path.write_text(task)
+
+    session_id = _safe_session_id(worker_id)
+    home_dir = worker_dir / "home"
+    _prepare_manus_home(home_dir, session_id, workspace)
+
+    before = _snapshot(workspace, service_paths=MANUS_SERVICE_PATHS)
+    command = [
+        "uv",
+        "run",
+        "manus",
+        "run",
+        "--model",
+        _manus_model(config.model),
+        "--summarizer",
+        _manus_model(config.model),
+        "--groups",
+        MANUS_GROUPS,
+        "--id",
+        session_id,
+        _manus_task(task_path),
+    ]
+
+    returncode = 0
+    timed_out = False
+    with log_path.open("w") as log_file:
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=MANUS_AGENT_PATH,
+                env=_manus_env(config, home_dir, workspace.parent),
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                start_new_session=True,
+            )
+            returncode = process.wait(timeout=config.worker_timeout)
+        except OSError as exc:
+            log_file.write(f"failed to start Manus worker: {exc}\n")
+            returncode = 1
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_process_group(process.pid)
+            returncode = process.wait()
+        finally:
+            log_file.flush()
+
+    files = _changed_files(
+        workspace,
+        before,
+        service_paths=MANUS_SERVICE_PATHS,
+    )
+    if timed_out:
+        return WorkerResult(
+            worker_id=worker_id,
+            ok=False,
+            message=(
+                f"worker timed out after {config.worker_timeout}s\n"
+                f"{_tail(log_path)}"
+            ).rstrip(),
+            files=files,
+            workspace=workspace,
+        )
+    if returncode != 0:
+        return WorkerResult(
+            worker_id=worker_id,
+            ok=False,
+            message=_tail(log_path),
+            files=files,
+            workspace=workspace,
+        )
+    if not summary_path.exists():
+        return WorkerResult(
+            worker_id=worker_id,
+            ok=False,
+            message="worker succeeded but summary.md was not created",
+            files=files,
+            workspace=workspace,
+        )
+
+    return WorkerResult(
+        worker_id=worker_id,
+        ok=True,
+        message=summary_path.read_text(),
+        files=files,
+        workspace=workspace,
+    )
+
+
 def _worker_env(config: Config) -> dict[str, str]:
     env = os.environ.copy()
     if config.worker_proxy:
@@ -125,10 +248,63 @@ def _worker_env(config: Config) -> dict[str, str]:
     return env
 
 
-def _snapshot(workspace: Path) -> dict[str, tuple[int, int]]:
+def _manus_env(config: Config, home_dir: Path, workspace_root: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env["HOME"] = str(home_dir.resolve())
+    env["LLM_API_KEY"] = config.api_key
+    env["MANUS_CLOUDRU_BASE"] = config.base_url
+    env["MANUS_THINKING"] = "off"
+    env["MANUS_WORKSPACE_ROOT"] = str(workspace_root.resolve())
+    env["LLM_BASE_URL"] = config.base_url
+    env["OPENAI_BASE_URL"] = config.base_url
+    _merge_no_proxy(env, config.base_url)
+    return env
+
+
+def _prepare_manus_home(home_dir: Path, session_id: str, workspace: Path) -> None:
+    workspaces_dir = home_dir / "manus" / "workspace"
+    workspaces_dir.mkdir(parents=True, exist_ok=True)
+    target = workspaces_dir / session_id
+    if target.exists() or target.is_symlink():
+        return
+    target.symlink_to(workspace.resolve(), target_is_directory=True)
+
+
+def _manus_model(model: str) -> str:
+    return MANUS_MODEL_ALIASES.get(model, model)
+
+
+def _manus_task(task_path: Path) -> str:
+    return (
+        "You are running as a swarm-harness Manus worker. "
+        f"Read the task from {task_path}. Work inside your active workspace. "
+        "Write requested durable files in that workspace. "
+        "Write the final worker message to summary.md, then finish with idle()."
+    )
+
+
+def _merge_no_proxy(env: dict[str, str], base_url: str) -> None:
+    parsed = urlparse(base_url)
+    hosts = {"foundation-models.api.cloud.ru", ".cloud.ru"}
+    if parsed.hostname:
+        hosts.add(parsed.hostname)
+    for key in ("NO_PROXY", "no_proxy"):
+        existing = [item.strip() for item in env.get(key, "").split(",") if item.strip()]
+        merged = existing + [host for host in sorted(hosts) if host not in existing]
+        env[key] = ",".join(merged)
+
+
+def _snapshot(
+    workspace: Path,
+    service_paths: set[tuple[str, ...]] | None = None,
+) -> dict[str, tuple[int, int]]:
     snapshot: dict[str, tuple[int, int]] = {}
     for path in workspace.rglob("*"):
-        if not path.is_file() or _is_service_path(path, workspace):
+        if not path.is_file() or _is_service_path(
+            path,
+            workspace,
+            service_paths=service_paths,
+        ):
             continue
         stat = path.stat()
         snapshot[path.relative_to(workspace).as_posix()] = (
@@ -138,10 +314,18 @@ def _snapshot(workspace: Path) -> dict[str, tuple[int, int]]:
     return snapshot
 
 
-def _changed_files(workspace: Path, before: dict[str, tuple[int, int]]) -> list[str]:
+def _changed_files(
+    workspace: Path,
+    before: dict[str, tuple[int, int]],
+    service_paths: set[tuple[str, ...]] | None = None,
+) -> list[str]:
     changed = []
     for path in workspace.rglob("*"):
-        if not path.is_file() or _is_service_path(path, workspace):
+        if not path.is_file() or _is_service_path(
+            path,
+            workspace,
+            service_paths=service_paths,
+        ):
             continue
         rel_path = path.relative_to(workspace).as_posix()
         stat = path.stat()
@@ -150,9 +334,21 @@ def _changed_files(workspace: Path, before: dict[str, tuple[int, int]]) -> list[
     return sorted(changed)
 
 
-def _is_service_path(path: Path, workspace: Path) -> bool:
+def _is_service_path(
+    path: Path,
+    workspace: Path,
+    service_paths: set[tuple[str, ...]] | None = None,
+) -> bool:
     rel_parts = path.relative_to(workspace).parts
-    return rel_parts[0] == ".worker" or rel_parts == ("task.md",)
+    if rel_parts[0] == ".worker" or rel_parts == ("task.md",):
+        return True
+    return any(rel_parts[: len(service_path)] == service_path for service_path in service_paths or set())
+
+
+def _safe_session_id(value: str) -> str:
+    safe = "".join(char if char.isalnum() or char in "._-" else "-" for char in value)
+    safe = safe.strip(".-")
+    return safe[:96] or "worker"
 
 
 def _tail(path: Path, limit: int = LOG_TAIL_CHARS) -> str:

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from swarm_harness.config import Config
-from swarm_harness.worker import WorkerResult, spawn_codex_worker
+from swarm_harness.worker import WorkerResult, spawn_codex_worker, spawn_manus_worker
 
 
 DRIVER_SYSTEM = """Ты драйвер-оркестратор swarm-harness.
@@ -84,12 +84,21 @@ def _finish(result: str) -> str:
 def _spawn_worker(
     task: str,
     worker_id: str = "",
+    backend: str = "codex",
     *,
     run_dir: Path,
     config: Config,
 ) -> str:
+    if backend not in {"codex", "manus"}:
+        return _unknown_backend_error(backend)
     actual_worker_id = worker_id or _next_worker_id(run_dir)
-    result = spawn_codex_worker(task, actual_worker_id, run_dir, config)
+    result = _spawn_worker_backend(
+        backend,
+        task,
+        actual_worker_id,
+        run_dir,
+        config,
+    )
     return _format_worker_result(result)
 
 
@@ -107,7 +116,8 @@ def _spawn_workers(
     with ThreadPoolExecutor(max_workers=config.max_parallel_workers) as executor:
         futures = [
             executor.submit(
-                spawn_codex_worker,
+                _spawn_worker_backend,
+                worker_task["backend"],
                 worker_task["task"],
                 worker_task["worker_id"],
                 run_dir,
@@ -206,6 +216,14 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "type": "string",
                         "description": "Необязательный id; пусто для worker-01, worker-02, ...",
                     },
+                    "backend": {
+                        "type": "string",
+                        "enum": ["codex", "manus"],
+                        "description": (
+                            "codex — кодинг-агент; manus — автономный "
+                            "исследовательский агент."
+                        ),
+                    },
                 },
                 "required": ["task"],
                 "additionalProperties": False,
@@ -235,6 +253,14 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                                     "description": (
                                         "Необязательный id; пусто для "
                                         "worker-01, worker-02, ..."
+                                    ),
+                                },
+                                "backend": {
+                                    "type": "string",
+                                    "enum": ["codex", "manus"],
+                                    "description": (
+                                        "codex — кодинг-агент; manus — "
+                                        "автономный исследовательский агент."
                                     ),
                                 },
                             },
@@ -439,13 +465,22 @@ def _assign_worker_ids(
     assigned = []
 
     for item in tasks:
+        backend = item.get("backend") or "codex"
+        if backend not in {"codex", "manus"}:
+            return [], _unknown_backend_error(backend)
         worker_id = item.get("worker_id") or _next_available_worker_id(
             occupied | batch_ids
         )
         if worker_id in batch_ids:
             return [], f"error: duplicate worker_id in spawn_workers batch: {worker_id}"
         batch_ids.add(worker_id)
-        assigned.append({"task": item["task"], "worker_id": worker_id})
+        assigned.append(
+            {
+                "task": item["task"],
+                "worker_id": worker_id,
+                "backend": backend,
+            }
+        )
 
     return assigned, None
 
@@ -472,6 +507,24 @@ def _format_worker_result(result: WorkerResult) -> str:
         f"files:\n{files}\n"
         f"message:\n{result.message}"
     )
+
+
+def _spawn_worker_backend(
+    backend: str,
+    task: str,
+    worker_id: str,
+    run_dir: Path,
+    config: Config,
+) -> WorkerResult:
+    if backend == "codex":
+        return spawn_codex_worker(task, worker_id, run_dir, config)
+    if backend == "manus":
+        return spawn_manus_worker(task, worker_id, run_dir, config)
+    raise ValueError(_unknown_backend_error(backend))
+
+
+def _unknown_backend_error(backend: str) -> str:
+    return f"error: unknown worker backend: {backend}; expected codex or manus"
 
 
 def _format_worker_error(worker_id: str, run_dir: Path, exc: Exception) -> str:

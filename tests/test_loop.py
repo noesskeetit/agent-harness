@@ -183,6 +183,37 @@ def test_spawn_worker_tool_reports_worker_result(monkeypatch, tmp_path: Path) ->
     assert "out.txt" in transcript_text
 
 
+def test_spawn_worker_tool_reports_unknown_backend(tmp_path: Path) -> None:
+    fake_llm = FakeLLM(
+        [
+            chat_with_tools(
+                tool_call(
+                    "call_worker",
+                    "spawn_worker",
+                    {
+                        "task": "создай out.txt",
+                        "worker_id": "worker-01",
+                        "backend": "missing",
+                    },
+                )
+            ),
+            chat_with_tools(tool_call("call_finish", "finish", {"result": "done"})),
+        ]
+    )
+
+    result = run_task(
+        "delegate",
+        Config(api_key="test", max_iterations=5),
+        fake_llm,
+        run_dir=tmp_path,
+    )
+
+    transcript_text = (tmp_path / "transcript.jsonl").read_text()
+    assert result.status == "completed"
+    assert "unknown worker backend" in transcript_text
+    assert "missing" in transcript_text
+
+
 def test_cli_run_prints_status_result_and_exit_code(
     monkeypatch, capsys, tmp_path: Path
 ) -> None:
