@@ -1,0 +1,316 @@
+import json
+import os
+import secrets
+import signal
+import subprocess
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from swarm_harness.config import Config
+
+
+DRIVER_SYSTEM = """Ты драйвер-оркестратор swarm-harness.
+Разбери задачу пользователя на конкретные действия.
+Действуй через доступные тулы, а не длинными рассуждениями.
+Создавай и читай файлы только когда это нужно для результата.
+Команды запускай через run_command и проверяй результат исполнением.
+После каждого шага смотри на вывод тула и решай следующий шаг.
+Если команда или тул упали, попробуй исправить причину в рамках задачи.
+Не выдумывай успех: проверяй созданные файлы и команды.
+Не пиши эссе и не описывай планы без действия.
+Когда работа завершена, обязательно вызови finish(result).
+В result кратко укажи, что сделано и как проверено."""
+
+MAX_TOOL_OUTPUT_CHARS = 8000
+
+
+@dataclass
+class RunResult:
+    status: str
+    result: str
+    iterations: int
+    run_dir: Path
+
+
+def _run_command(
+    cmd: str,
+    cwd: str = "",
+    *,
+    run_dir: Path,
+    command_timeout: int,
+) -> str:
+    command_cwd = _resolve_path(cwd, run_dir) if cwd else run_dir
+    process = subprocess.Popen(
+        cmd,
+        cwd=command_cwd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        output, _ = process.communicate(timeout=command_timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        output, _ = process.communicate()
+        return (
+            f"exit=-1\ncommand timed out after {command_timeout}s\n"
+            f"{output or ''}"
+        )
+    return f"exit={process.returncode}\n{output or ''}"
+
+
+def _read_file(path: str, *, run_dir: Path) -> str:
+    return _resolve_path(path, run_dir).read_text()
+
+
+def _write_file(path: str, content: str, *, run_dir: Path) -> str:
+    target = _resolve_path(path, run_dir)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+    return f"wrote {target}"
+
+
+def _finish(result: str) -> str:
+    return result
+
+
+TOOLS: dict[str, Callable[..., str]] = {
+    "run_command": _run_command,
+    "read_file": _read_file,
+    "write_file": _write_file,
+    "finish": _finish,
+}
+
+TOOL_SCHEMAS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "Исполнить shell-команду и вернуть exit code и вывод.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "cmd": {"type": "string"},
+                    "cwd": {
+                        "type": "string",
+                        "description": "Рабочая директория, по умолчанию run_dir.",
+                    },
+                },
+                "required": ["cmd"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Прочитать файл. Относительные пути считаются от run_dir.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Записать файл. Родительские директории создаются.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "finish",
+            "description": "Завершить ран и вернуть итог пользователю.",
+            "parameters": {
+                "type": "object",
+                "properties": {"result": {"type": "string"}},
+                "required": ["result"],
+                "additionalProperties": False,
+            },
+        },
+    },
+]
+
+
+def run_task(
+    task: str,
+    config: Config,
+    llm,
+    run_dir: Path | None = None,
+    command_timeout: int = 300,
+) -> RunResult:
+    actual_run_dir = run_dir or _new_run_dir()
+    actual_run_dir.mkdir(parents=True, exist_ok=True)
+    transcript_path = actual_run_dir / "transcript.jsonl"
+
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": DRIVER_SYSTEM},
+        {"role": "user", "content": task},
+    ]
+    for message in messages:
+        _append_message(transcript_path, message)
+
+    last_assistant_text = ""
+    for iteration in range(1, config.max_iterations + 1):
+        response = llm.chat(messages, tools=TOOL_SCHEMAS)
+        last_assistant_text = response.text
+        assistant_message = _assistant_message(response)
+        messages.append(assistant_message)
+        _append_message(transcript_path, assistant_message)
+
+        if response.tool_calls:
+            for call in response.tool_calls:
+                output, finish_result = _execute_tool(
+                    call.name,
+                    call.arguments,
+                    actual_run_dir,
+                    command_timeout,
+                )
+                limited_output = _limit_tool_output(
+                    output,
+                    actual_run_dir,
+                    iteration,
+                    call.name,
+                )
+                tool_message = {
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": limited_output,
+                }
+                messages.append(tool_message)
+                _append_message(transcript_path, tool_message)
+
+                if finish_result is not None:
+                    (actual_run_dir / "result.md").write_text(finish_result)
+                    return RunResult(
+                        status="completed",
+                        result=finish_result,
+                        iterations=iteration,
+                        run_dir=actual_run_dir,
+                    )
+        else:
+            reminder = {
+                "role": "user",
+                "content": "Заверши работу вызовом finish или продолжай тулами.",
+            }
+            messages.append(reminder)
+            _append_message(transcript_path, reminder)
+
+    explanation = "budget_exceeded: достигнут лимит итераций"
+    if last_assistant_text:
+        explanation = f"{explanation}. Последний ответ ассистента: {last_assistant_text}"
+    return RunResult(
+        status="budget_exceeded",
+        result=explanation,
+        iterations=config.max_iterations,
+        run_dir=actual_run_dir,
+    )
+
+
+def _execute_tool(
+    name: str,
+    arguments: dict[str, Any],
+    run_dir: Path,
+    command_timeout: int,
+) -> tuple[str, str | None]:
+    tool = TOOLS.get(name)
+    if tool is None:
+        return f"error: unknown tool: {name}", None
+
+    try:
+        if name == "run_command":
+            output = tool(
+                run_dir=run_dir,
+                command_timeout=command_timeout,
+                **arguments,
+            )
+            return output, None
+        if name in {"read_file", "write_file"}:
+            output = tool(run_dir=run_dir, **arguments)
+            return output, None
+        output = tool(**arguments)
+    except Exception as exc:
+        return f"error: {type(exc).__name__}: {exc}", None
+
+    if name == "finish":
+        return output, output
+    return output, None
+
+
+def _assistant_message(response) -> dict[str, Any]:
+    message: dict[str, Any] = {"role": "assistant", "content": response.text}
+    if response.tool_calls:
+        message["tool_calls"] = [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {
+                    "name": call.name,
+                    "arguments": json.dumps(
+                        call.arguments,
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+            for call in response.tool_calls
+        ]
+    return message
+
+
+def _append_message(transcript_path: Path, message: dict[str, Any]) -> None:
+    with transcript_path.open("a", encoding="utf-8") as file:
+        json.dump(message, file, ensure_ascii=False)
+        file.write("\n")
+
+
+def _limit_tool_output(
+    output: str,
+    run_dir: Path,
+    iteration: int,
+    tool_name: str,
+) -> str:
+    if len(output) <= MAX_TOOL_OUTPUT_CHARS:
+        return output
+
+    output_dir = run_dir / "tool_outputs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{iteration}-{_safe_tool_name(tool_name)}.txt"
+    output_path.write_text(output)
+    marker = f"\n[truncated, full output: {output_path}]"
+    keep = max(0, MAX_TOOL_OUTPUT_CHARS - len(marker))
+    return f"{output[:keep]}{marker}"
+
+
+def _safe_tool_name(tool_name: str) -> str:
+    return "".join(char if char.isalnum() or char in "-_" else "_" for char in tool_name)
+
+
+def _resolve_path(path: str, run_dir: Path) -> Path:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate
+    return run_dir / candidate
+
+
+def _new_run_dir() -> Path:
+    run_id = f"{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(4)}"
+    return Path("runs") / run_id
