@@ -14,7 +14,7 @@ class Config:
     api_key: str
     base_url: str = "https://foundation-models.api.cloud.ru/v1"
     model: str = "moonshotai/Kimi-K2.6"
-    manus_model: str = "qwen-coder"
+    manus_model: str = "kimi26"
     max_iterations: int = 40
     worker_timeout: int = 1800
     max_parallel_workers: int = 4

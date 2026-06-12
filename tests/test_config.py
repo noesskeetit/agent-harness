@@ -61,4 +61,4 @@ def test_from_env_uses_defaults_for_optional_values(
 
     config = Config.from_env(env_file=None)
 
-    assert getattr(config, "manus_model", None) == "qwen-coder"
+    assert getattr(config, "manus_model", None) == "kimi26"
