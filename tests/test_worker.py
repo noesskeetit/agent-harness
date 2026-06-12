@@ -93,14 +93,28 @@ test "$LLM_API_KEY" = "test-key"
 test "$MANUS_CLOUDRU_BASE" = "https://fm.example/v1"
 test "$MANUS_THINKING" = "off"
 test "$PWD" = "__MANUS_AGENT_PATH__"
+model=""
+summarizer=""
 session=""
 while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--id" ]; then
-    shift
-    session="$1"
-  fi
+  case "$1" in
+    --model)
+      shift
+      model="$1"
+      ;;
+    --summarizer)
+      shift
+      summarizer="$1"
+      ;;
+    --id)
+      shift
+      session="$1"
+      ;;
+  esac
   shift || true
 done
+test "$model" = "custom-manus"
+test "$summarizer" = "custom-manus"
 workspace="$HOME/manus/workspace/$session"
 printf 'готово' > "$workspace/summary.md"
 printf 'fact one' > "$workspace/note.md"
@@ -119,7 +133,8 @@ printf 'fact one' > "$workspace/note.md"
         Config(
             api_key="test-key",
             base_url="https://fm.example/v1",
-            model="Qwen/Qwen3-Coder-Next",
+            model="moonshotai/Kimi-K2.6",
+            manus_model="custom-manus",
         ),
     )
 

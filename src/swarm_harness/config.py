@@ -14,6 +14,7 @@ class Config:
     api_key: str
     base_url: str = "https://foundation-models.api.cloud.ru/v1"
     model: str = "moonshotai/Kimi-K2.6"
+    manus_model: str = "qwen-coder"
     max_iterations: int = 40
     worker_timeout: int = 1800
     max_parallel_workers: int = 4
@@ -34,6 +35,7 @@ class Config:
             api_key=api_key,
             base_url=os.getenv("SWARM_BASE_URL", cls.base_url),
             model=os.getenv("SWARM_MODEL", cls.model),
+            manus_model=os.getenv("SWARM_MANUS_MODEL", cls.manus_model),
             max_iterations=int(
                 os.getenv("SWARM_MAX_ITERATIONS", str(cls.max_iterations))
             ),

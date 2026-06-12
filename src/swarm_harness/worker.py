@@ -11,14 +11,6 @@ from swarm_harness.config import Config
 LOG_TAIL_CHARS = 2000
 MANUS_AGENT_PATH = Path.home() / "Code" / "manus-agent"
 MANUS_GROUPS = "file,memory,shell,code,todo,skills,lifecycle"
-MANUS_MODEL_ALIASES = {
-    "moonshotai/Kimi-K2.6": "kimi26",
-    "deepseek-ai/DeepSeek-V4-Pro": "deepseek-v4-pro",
-    "Qwen/Qwen3-Coder-Next": "qwen-coder",
-    "MiniMaxAI/MiniMax-M2": "minimax",
-    "zai-org/GLM-4.7": "glm",
-    "qwen36-27b-fp8": "qwen35-vlm",
-}
 MANUS_SERVICE_PATHS = {
     ("todo.md",),
     ("journal.md",),
@@ -155,9 +147,9 @@ def spawn_manus_worker(
         "manus",
         "run",
         "--model",
-        _manus_model(config.model),
+        config.manus_model,
         "--summarizer",
-        _manus_model(config.model),
+        config.manus_model,
         "--groups",
         MANUS_GROUPS,
         "--id",
@@ -268,10 +260,6 @@ def _prepare_manus_home(home_dir: Path, session_id: str, workspace: Path) -> Non
     if target.exists() or target.is_symlink():
         return
     target.symlink_to(workspace.resolve(), target_is_directory=True)
-
-
-def _manus_model(model: str) -> str:
-    return MANUS_MODEL_ALIASES.get(model, model)
 
 
 def _manus_task(task_path: Path) -> str:
