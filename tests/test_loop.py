@@ -166,7 +166,7 @@ def test_spawn_worker_tool_reports_worker_result(monkeypatch, tmp_path: Path) ->
         )
 
     monkeypatch.setattr(
-        "swarm_harness.loop.spawn_codex_worker",
+        "swarm_harness.tools.spawn_codex_worker",
         fake_spawn_codex_worker,
     )
 

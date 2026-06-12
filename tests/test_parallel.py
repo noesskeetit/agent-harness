@@ -2,7 +2,7 @@ import time
 from pathlib import Path
 
 from swarm_harness.config import Config
-from swarm_harness.loop import _execute_tool
+from swarm_harness.tools import execute_tool
 from swarm_harness.worker import WorkerResult
 
 
@@ -23,13 +23,13 @@ def test_spawn_workers_obeys_parallel_worker_cap(monkeypatch, tmp_path: Path) ->
         )
 
     monkeypatch.setattr(
-        "swarm_harness.loop.spawn_codex_worker",
+        "swarm_harness.tools.spawn_codex_worker",
         fake_spawn_codex_worker,
     )
     tasks = [{"task": "a"}, {"task": "b"}, {"task": "c"}]
 
     started = time.perf_counter()
-    _execute_tool(
+    execute_tool(
         "spawn_workers",
         {"tasks": tasks},
         tmp_path / "parallel",
@@ -39,7 +39,7 @@ def test_spawn_workers_obeys_parallel_worker_cap(monkeypatch, tmp_path: Path) ->
     parallel_elapsed = time.perf_counter() - started
 
     started = time.perf_counter()
-    _execute_tool(
+    execute_tool(
         "spawn_workers",
         {"tasks": tasks},
         tmp_path / "serial",
@@ -73,11 +73,11 @@ def test_spawn_workers_autonumbers_after_existing_workers(
         )
 
     monkeypatch.setattr(
-        "swarm_harness.loop.spawn_codex_worker",
+        "swarm_harness.tools.spawn_codex_worker",
         fake_spawn_codex_worker,
     )
 
-    output, finish_result = _execute_tool(
+    output, finish_result = execute_tool(
         "spawn_workers",
         {"tasks": [{"task": "a"}, {"task": "b"}]},
         tmp_path,
@@ -91,7 +91,7 @@ def test_spawn_workers_autonumbers_after_existing_workers(
 
 
 def test_spawn_workers_rejects_duplicate_worker_id_in_batch(tmp_path: Path) -> None:
-    output, finish_result = _execute_tool(
+    output, finish_result = execute_tool(
         "spawn_workers",
         {
             "tasks": [
@@ -130,11 +130,11 @@ def test_spawn_workers_returns_blocks_in_input_order(
         )
 
     monkeypatch.setattr(
-        "swarm_harness.loop.spawn_codex_worker",
+        "swarm_harness.tools.spawn_codex_worker",
         fake_spawn_codex_worker,
     )
 
-    output, _ = _execute_tool(
+    output, _ = execute_tool(
         "spawn_workers",
         {
             "tasks": [
@@ -172,11 +172,11 @@ def test_spawn_workers_reports_one_exception_without_aborting_batch(
         )
 
     monkeypatch.setattr(
-        "swarm_harness.loop.spawn_codex_worker",
+        "swarm_harness.tools.spawn_codex_worker",
         fake_spawn_codex_worker,
     )
 
-    output, finish_result = _execute_tool(
+    output, finish_result = execute_tool(
         "spawn_workers",
         {
             "tasks": [
@@ -216,11 +216,11 @@ def test_spawn_workers_routes_manus_backend(
         )
 
     monkeypatch.setattr(
-        "swarm_harness.loop.spawn_manus_worker",
+        "swarm_harness.tools.spawn_manus_worker",
         fake_spawn_manus_worker,
     )
 
-    output, finish_result = _execute_tool(
+    output, finish_result = execute_tool(
         "spawn_workers",
         {"tasks": [{"task": "research", "backend": "manus"}]},
         tmp_path,
