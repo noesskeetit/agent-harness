@@ -63,12 +63,15 @@ def _spawn_worker(
     task: str,
     worker_id: str = "",
     backend: str = "codex",
+    model: str = "",
     *,
     run_dir: Path,
     config: Config,
 ) -> str:
     if backend not in {"codex", "manus"}:
         return _unknown_backend_error(backend)
+    if model and backend != "manus":
+        return "error: параметр model поддерживается только для backend=manus"
     actual_worker_id = worker_id or _next_available_worker_id(
         _existing_worker_ids(run_dir)
     )
@@ -78,6 +81,7 @@ def _spawn_worker(
         actual_worker_id,
         run_dir,
         config,
+        model,
     )
     return _format_worker_result(result)
 
@@ -102,6 +106,7 @@ def _spawn_workers(
                 worker_task["worker_id"],
                 run_dir,
                 config,
+                worker_task["model"],
             )
             for worker_task in worker_tasks
         ]
@@ -126,11 +131,12 @@ def _spawn_worker_backend(
     worker_id: str,
     run_dir: Path,
     config: Config,
+    model: str = "",
 ) -> WorkerResult:
     if backend == "codex":
         return spawn_codex_worker(task, worker_id, run_dir, config)
     if backend == "manus":
-        return spawn_manus_worker(task, worker_id, run_dir, config)
+        return spawn_manus_worker(task, worker_id, run_dir, config, model)
     raise ValueError(_unknown_backend_error(backend))
 
 
@@ -146,6 +152,9 @@ def _assign_worker_ids(
         backend = item.get("backend") or "codex"
         if backend not in {"codex", "manus"}:
             return [], _unknown_backend_error(backend)
+        model = item.get("model") or ""
+        if model and backend != "manus":
+            return [], "error: параметр model поддерживается только для backend=manus"
         worker_id = item.get("worker_id") or _next_available_worker_id(
             occupied | batch_ids
         )
@@ -157,6 +166,7 @@ def _assign_worker_ids(
                 "task": item["task"],
                 "worker_id": worker_id,
                 "backend": backend,
+                "model": model,
             }
         )
 
@@ -269,6 +279,15 @@ _BACKEND_PROPERTY = {
     "description": "codex — кодинг-агент; manus — автономный исследовательский агент.",
 }
 
+_MODEL_PROPERTY = {
+    "type": "string",
+    "description": (
+        "Только для backend=manus: модель воркера. Пусто — текстовый дефолт "
+        "(kimi26). 'qwen35-vlm' — vision-воркер для анализа изображений "
+        "(тул image_view; страницы PDF можно рендерить в PNG через pdftoppm)."
+    ),
+}
+
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -334,6 +353,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "task": {"type": "string"},
                     "worker_id": _WORKER_ID_PROPERTY,
                     "backend": _BACKEND_PROPERTY,
+                    "model": _MODEL_PROPERTY,
                 },
                 "required": ["task"],
                 "additionalProperties": False,
@@ -360,6 +380,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                                 "task": {"type": "string"},
                                 "worker_id": _WORKER_ID_PROPERTY,
                                 "backend": _BACKEND_PROPERTY,
+                                "model": _MODEL_PROPERTY,
                             },
                             "required": ["task"],
                             "additionalProperties": False,

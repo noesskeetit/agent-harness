@@ -206,6 +206,7 @@ def test_spawn_workers_routes_manus_backend(
         worker_id: str,
         run_dir: Path,
         config: Config,
+        model: str = "",
     ) -> WorkerResult:
         return WorkerResult(
             worker_id=worker_id,

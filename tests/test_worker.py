@@ -188,3 +188,41 @@ def test_spawn_manus_worker_times_out(monkeypatch, tmp_path: Path) -> None:
 
     assert result.ok is False
     assert "timed out" in result.message
+
+
+def test_spawn_manus_worker_explicit_model_overrides_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    manus_agent_path = tmp_path / "manus-agent"
+    manus_agent_path.mkdir()
+    _uv_stub(
+        tmp_path,
+        """
+model=""
+session=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --model) shift; model="$1" ;;
+    --id) shift; session="$1" ;;
+  esac
+  shift || true
+done
+test "$model" = "qwen35-vlm"
+workspace="$HOME/manus/workspace/$session"
+printf 'видел картинку' > "$workspace/summary.md"
+""",
+    )
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr("swarm_harness.worker.MANUS_AGENT_PATH", manus_agent_path)
+
+    result = spawn_manus_worker(
+        "опиши диаграмму",
+        "worker-01",
+        tmp_path / "run",
+        Config(api_key="test-key", manus_model="kimi26"),
+        model="qwen35-vlm",
+    )
+
+    assert result.ok is True
+    assert result.message == "видел картинку"

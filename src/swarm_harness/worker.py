@@ -125,6 +125,7 @@ def spawn_manus_worker(
     worker_id: str,
     run_dir: Path,
     config: Config,
+    model: str = "",
 ) -> WorkerResult:
     workspace = run_dir / "workers" / worker_id
     worker_dir = workspace / ".worker"
@@ -141,15 +142,16 @@ def spawn_manus_worker(
     _prepare_manus_home(home_dir, session_id, workspace)
 
     before = _snapshot(workspace, service_paths=MANUS_SERVICE_PATHS)
+    worker_model = model or config.manus_model
     command = [
         "uv",
         "run",
         "manus",
         "run",
         "--model",
-        config.manus_model,
+        worker_model,
         "--summarizer",
-        config.manus_model,
+        worker_model,
         "--groups",
         MANUS_GROUPS,
         "--id",
