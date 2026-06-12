@@ -47,9 +47,9 @@ calling) + воркеры-сабпроцессы (codex exec, позже Manus).
 ## Пост-плановые задачи
 - [x] **T6b** — отдельная manus_model ✅ a2fdb85
 - [x] **T7** — Kimi везде (upstream kimi26 71c4cda + дефолт 35cd107) ✅ live: Executor kimi26, done
-- [ ] **T8** — фиксы контекст-движка manus-agent (snip / protected pins)
-- [ ] **T9** — актуализация upstream из vendored
-- [ ] **T10** — честность верификации драйвера (см. docs/incidents.md)
+- [x] **T8** — фиксы контекст-движка manus-agent ✅ 72d8126 (исполнил оркестратор)
+- [x] **T9** — актуализация upstream из vendored ✅ d228bd6 (исполнил оркестратор)
+- [x] **T10** — честность верификации драйвера ✅ d2cc90d + явный TG-mute воркеров
 
 ## Порядок и чекпоинты
 
