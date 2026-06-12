@@ -17,7 +17,7 @@ calling) + воркеры-сабпроцессы (codex exec, позже Manus).
 
 ## Задачи
 
-- [ ] **T1. Scaffold + LLM-клиент + selfcheck** — `tasks/task-01.md`
+- [x] **T1. Scaffold + LLM-клиент + selfcheck** — `tasks/task-01.md` ✅ принято: fe32fcf, selfcheck живой
   pyproject (uv, console script `swarm`), `config.py` (Config.from_env),
   `llm.py` (тонкий клиент chat-with-tools), `cli.py` (`selfcheck` живой,
   `run` заглушка). Done: `uv run swarm selfcheck` живым запросом возвращает
