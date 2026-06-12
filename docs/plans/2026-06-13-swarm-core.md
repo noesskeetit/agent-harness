@@ -44,6 +44,13 @@ calling) + воркеры-сабпроцессы (codex exec, позже Manus).
   `~/Code/manus-agent`): запуск Manus-воркера сабпроцессом с тем же worker
   contract. Backend выбирается per-spawn аргументом, дефолт codex_cli.
 
+## Пост-плановые задачи
+- [x] **T6b** — отдельная manus_model ✅ a2fdb85
+- [x] **T7** — Kimi везде (upstream kimi26 71c4cda + дефолт 35cd107) ✅ live: Executor kimi26, done
+- [ ] **T8** — фиксы контекст-движка manus-agent (snip / protected pins)
+- [ ] **T9** — актуализация upstream из vendored
+- [ ] **T10** — честность верификации драйвера (см. docs/incidents.md)
+
 ## Порядок и чекпоинты
 
 T1 → T2 → T3 → T5(A1) → T4 → T5(A2,A3) → T6.

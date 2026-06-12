@@ -22,6 +22,11 @@ DRIVER_SYSTEM = """Ты драйвер-оркестратор swarm-harness.
 После каждого шага смотри на вывод тула и решай следующий шаг.
 Если команда или тул упали, попробуй исправить причину в рамках задачи.
 Не выдумывай успех: проверяй созданные файлы и команды.
+Директории воркеров в runs/ никогда не удаляются: пути из workspace= и
+files: результата spawn_worker используй буквально.
+Не нашёл файл по ожидаемому пути — ищи через ls/find, а не предполагай.
+Если проверить результат не удалось, напиши об этом в finish(result) прямо;
+выдумывать причины недоступности запрещено.
 Не пиши эссе и не описывай планы без действия.
 Когда работа завершена, обязательно вызови finish(result).
 В result кратко укажи, что сделано и как проверено."""
@@ -500,10 +505,13 @@ def _next_available_worker_id(occupied: set[str]) -> str:
 
 
 def _format_worker_result(result: WorkerResult) -> str:
-    files = "\n".join(f"- {path}" for path in result.files)
+    workspace_abs = result.workspace.resolve()
+    files = "\n".join(
+        f"- {path} -> {workspace_abs / path}" for path in result.files
+    )
     return (
         f"worker={result.worker_id} ok={str(result.ok).lower()} "
-        f"workspace={result.workspace}\n"
+        f"workspace={workspace_abs}\n"
         f"files:\n{files}\n"
         f"message:\n{result.message}"
     )

@@ -247,6 +247,11 @@ def _manus_env(config: Config, home_dir: Path, workspace_root: Path) -> dict[str
     env["MANUS_CLOUDRU_BASE"] = config.base_url
     env["MANUS_THINKING"] = "off"
     env["MANUS_WORKSPACE_ROOT"] = str(workspace_root.resolve())
+    # Воркеры не общаются с человеком напрямую: глушим Telegram явно
+    # (фейковый HOME и так прячет ~/.config/manus/secrets.env, но контракт
+    # должен быть виден в коде, а не держаться на side effect).
+    env["MANUS_TG_BOT_TOKEN"] = ""
+    env["MANUS_TG_USER_ID"] = ""
     env["LLM_BASE_URL"] = config.base_url
     env["OPENAI_BASE_URL"] = config.base_url
     _merge_no_proxy(env, config.base_url)

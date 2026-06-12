@@ -180,7 +180,8 @@ def test_spawn_worker_tool_reports_worker_result(monkeypatch, tmp_path: Path) ->
     transcript_text = (tmp_path / "transcript.jsonl").read_text()
     assert result.status == "completed"
     assert "ok=true" in transcript_text
-    assert "out.txt" in transcript_text
+    expected_abs = (tmp_path / "workers" / "worker-01").resolve() / "out.txt"
+    assert f"out.txt -> {expected_abs}" in transcript_text
 
 
 def test_spawn_worker_tool_reports_unknown_backend(tmp_path: Path) -> None:
