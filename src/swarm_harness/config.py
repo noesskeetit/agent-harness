@@ -16,6 +16,7 @@ class Config:
     model: str = "moonshotai/Kimi-K2.6"
     max_iterations: int = 40
     worker_timeout: int = 1800
+    max_parallel_workers: int = 4
     worker_proxy: str = ""
 
     @classmethod
@@ -38,6 +39,12 @@ class Config:
             ),
             worker_timeout=int(
                 os.getenv("SWARM_WORKER_TIMEOUT", str(cls.worker_timeout))
+            ),
+            max_parallel_workers=int(
+                os.getenv(
+                    "SWARM_MAX_PARALLEL_WORKERS",
+                    str(cls.max_parallel_workers),
+                )
             ),
             worker_proxy=os.getenv("SWARM_WORKER_PROXY", cls.worker_proxy),
         )

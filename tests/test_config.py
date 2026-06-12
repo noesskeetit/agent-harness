@@ -9,6 +9,7 @@ ENV_KEYS = [
     "SWARM_MODEL",
     "SWARM_MAX_ITERATIONS",
     "SWARM_WORKER_TIMEOUT",
+    "SWARM_MAX_PARALLEL_WORKERS",
     "SWARM_WORKER_PROXY",
 ]
 
@@ -25,6 +26,7 @@ def test_from_env_parses_all_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SWARM_MODEL", "test-model")
     monkeypatch.setenv("SWARM_MAX_ITERATIONS", "7")
     monkeypatch.setenv("SWARM_WORKER_TIMEOUT", "90")
+    monkeypatch.setenv("SWARM_MAX_PARALLEL_WORKERS", "8")
     monkeypatch.setenv("SWARM_WORKER_PROXY", "http://proxy.test:8080")
 
     config = Config.from_env(env_file=None)
@@ -36,6 +38,8 @@ def test_from_env_parses_all_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(config.max_iterations, int)
     assert config.worker_timeout == 90
     assert isinstance(config.worker_timeout, int)
+    assert config.max_parallel_workers == 8
+    assert isinstance(config.max_parallel_workers, int)
     assert config.worker_proxy == "http://proxy.test:8080"
 
 

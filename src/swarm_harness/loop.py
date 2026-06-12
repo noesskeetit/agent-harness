@@ -4,6 +4,7 @@ import secrets
 import signal
 import subprocess
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -92,11 +93,49 @@ def _spawn_worker(
     return _format_worker_result(result)
 
 
+def _spawn_workers(
+    tasks: list[dict[str, str]],
+    *,
+    run_dir: Path,
+    config: Config,
+) -> str:
+    worker_tasks, error = _assign_worker_ids(tasks, run_dir)
+    if error:
+        return error
+
+    blocks: list[str] = []
+    with ThreadPoolExecutor(max_workers=config.max_parallel_workers) as executor:
+        futures = [
+            executor.submit(
+                spawn_codex_worker,
+                worker_task["task"],
+                worker_task["worker_id"],
+                run_dir,
+                config,
+            )
+            for worker_task in worker_tasks
+        ]
+        for worker_task, future in zip(worker_tasks, futures, strict=True):
+            try:
+                blocks.append(_format_worker_result(future.result()))
+            except Exception as exc:
+                blocks.append(
+                    _format_worker_error(
+                        worker_task["worker_id"],
+                        run_dir,
+                        exc,
+                    )
+                )
+
+    return "\n---\n".join(blocks)
+
+
 TOOLS: dict[str, Callable[..., str]] = {
     "run_command": _run_command,
     "read_file": _read_file,
     "write_file": _write_file,
     "spawn_worker": _spawn_worker,
+    "spawn_workers": _spawn_workers,
     "finish": _finish,
 }
 
@@ -169,6 +208,42 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["task"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spawn_workers",
+            "description": (
+                "Запусти НЕЗАВИСИМЫЕ подзадачи параллельно; не используй "
+                "для подзадач, где одна зависит от результата другой — "
+                "для них последовательные spawn_worker."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "task": {"type": "string"},
+                                "worker_id": {
+                                    "type": "string",
+                                    "description": (
+                                        "Необязательный id; пусто для "
+                                        "worker-01, worker-02, ..."
+                                    ),
+                                },
+                            },
+                            "required": ["task"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["tasks"],
                 "additionalProperties": False,
             },
         },
@@ -287,7 +362,7 @@ def _execute_tool(
         if name in {"read_file", "write_file"}:
             output = tool(run_dir=run_dir, **arguments)
             return output, None
-        if name == "spawn_worker":
+        if name in {"spawn_worker", "spawn_workers"}:
             output = tool(run_dir=run_dir, config=config, **arguments)
             return output, None
         output = tool(**arguments)
@@ -355,6 +430,40 @@ def _next_worker_id(run_dir: Path) -> str:
     return f"worker-{index:02d}"
 
 
+def _assign_worker_ids(
+    tasks: list[dict[str, str]],
+    run_dir: Path,
+) -> tuple[list[dict[str, str]], str | None]:
+    occupied = _existing_worker_ids(run_dir)
+    batch_ids: set[str] = set()
+    assigned = []
+
+    for item in tasks:
+        worker_id = item.get("worker_id") or _next_available_worker_id(
+            occupied | batch_ids
+        )
+        if worker_id in batch_ids:
+            return [], f"error: duplicate worker_id in spawn_workers batch: {worker_id}"
+        batch_ids.add(worker_id)
+        assigned.append({"task": item["task"], "worker_id": worker_id})
+
+    return assigned, None
+
+
+def _existing_worker_ids(run_dir: Path) -> set[str]:
+    workers_dir = run_dir / "workers"
+    if not workers_dir.exists():
+        return set()
+    return {path.name for path in workers_dir.iterdir() if path.is_dir()}
+
+
+def _next_available_worker_id(occupied: set[str]) -> str:
+    index = 1
+    while f"worker-{index:02d}" in occupied:
+        index += 1
+    return f"worker-{index:02d}"
+
+
 def _format_worker_result(result: WorkerResult) -> str:
     files = "\n".join(f"- {path}" for path in result.files)
     return (
@@ -362,6 +471,18 @@ def _format_worker_result(result: WorkerResult) -> str:
         f"workspace={result.workspace}\n"
         f"files:\n{files}\n"
         f"message:\n{result.message}"
+    )
+
+
+def _format_worker_error(worker_id: str, run_dir: Path, exc: Exception) -> str:
+    return _format_worker_result(
+        WorkerResult(
+            worker_id=worker_id,
+            ok=False,
+            message=f"{type(exc).__name__}: {exc}",
+            files=[],
+            workspace=run_dir / "workers" / worker_id,
+        )
     )
 
 
