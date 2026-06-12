@@ -36,7 +36,7 @@ calling) + воркеры-сабпроцессы (codex exec, позже Manus).
 - [x] **T4. Параллель + лимиты** — `tasks/task-04.md` ✅ принято: 760d03d, live: 1×spawn_workers → 2 параллельных воркера
   `spawn_workers(tasks[])` через ThreadPoolExecutor, cap из env (дефолт 4).
   Усечение больших tool-результатов: в контекст TL;DR + путь к полному файлу.
-- [ ] **T5. Приёмочные сценарии A1-A3** — `tasks/task-05.md`
+- [x] **T5. Приёмочные сценарии A1-A3** — `tasks/task-05.md` ✅ принято: 129c782, все три PASS живьём, артефакты перепроверены
   `scenarios/` + чекеры-скрипты по SPEC.md. Гоняются руками/CI с SWARM_LIVE=1.
   Это единственная «приёмка» проекта — никаких smoke-модулей в src.
 - [ ] **T6. Manus worker backend** — `tasks/task-06.md`
