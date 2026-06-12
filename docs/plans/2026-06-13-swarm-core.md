@@ -39,7 +39,7 @@ calling) + воркеры-сабпроцессы (codex exec, позже Manus).
 - [x] **T5. Приёмочные сценарии A1-A3** — `tasks/task-05.md` ✅ принято: 129c782, все три PASS живьём, артефакты перепроверены
   `scenarios/` + чекеры-скрипты по SPEC.md. Гоняются руками/CI с SWARM_LIVE=1.
   Это единственная «приёмка» проекта — никаких smoke-модулей в src.
-- [ ] **T6. Manus worker backend** — `tasks/task-06.md`
+- [x] **T6. Manus worker backend** — `tasks/task-06.md` ✅ принято: 28ddb4e + a2fdb85 (T6b: отдельная manus_model, дефолт qwen-coder), live Manus-воркер на дефолтном окружении
   Порт минимума из kaggle_grinder `manus/adapter.py` (upstream
   `~/Code/manus-agent`): запуск Manus-воркера сабпроцессом с тем же worker
   contract. Backend выбирается per-spawn аргументом, дефолт codex_cli.
