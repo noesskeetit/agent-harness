@@ -1,0 +1,27 @@
+[project]
+name = "swarm-harness"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "openai",
+    "python-dotenv",
+]
+
+[project.scripts]
+swarm = "swarm_harness.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
