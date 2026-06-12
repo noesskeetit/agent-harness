@@ -28,7 +28,7 @@ calling) + воркеры-сабпроцессы (codex exec, позже Manus).
   max_iterations (`budget_exceeded`). Тулы этой задачи: `run_command`,
   `read_file`, `write_file`, `finish`. Unit: FakeLLM-сценарии (2-3 шага,
   бюджет, неизвестный тул). Live: `swarm run "посчитай 2+2 и finish"`.
-- [ ] **T3. Worker backend codex_cli** — `tasks/task-03.md`
+- [x] **T3. Worker backend codex_cli** — `tasks/task-03.md` ✅ принято: b4b6a66, живой e2e драйвер→воркер
   `worker.py`: spawn_worker(task) → workspace `runs/<id>/workers/<wid>/`,
   `task.md`, сабпроцесс `codex exec` (sandbox workspace-write, прокси из
   SWARM_WORKER_PROXY, --output-last-message), таймаут→kill→честный фейл.
