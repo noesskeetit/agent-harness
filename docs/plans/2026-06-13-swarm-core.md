@@ -33,7 +33,7 @@ calling) + воркеры-сабпроцессы (codex exec, позже Manus).
   `task.md`, сабпроцесс `codex exec` (sandbox workspace-write, прокси из
   SWARM_WORKER_PROXY, --output-last-message), таймаут→kill→честный фейл.
   Результат: финальное сообщение + список файлов. Live: воркер создаёт файл.
-- [ ] **T4. Параллель + лимиты** — `tasks/task-04.md`
+- [x] **T4. Параллель + лимиты** — `tasks/task-04.md` ✅ принято: 760d03d, live: 1×spawn_workers → 2 параллельных воркера
   `spawn_workers(tasks[])` через ThreadPoolExecutor, cap из env (дефолт 4).
   Усечение больших tool-результатов: в контекст TL;DR + путь к полному файлу.
 - [ ] **T5. Приёмочные сценарии A1-A3** — `tasks/task-05.md`
