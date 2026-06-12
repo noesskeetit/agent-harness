@@ -22,7 +22,7 @@ calling) + воркеры-сабпроцессы (codex exec, позже Manus).
   `llm.py` (тонкий клиент chat-with-tools), `cli.py` (`selfcheck` живой,
   `run` заглушка). Done: `uv run swarm selfcheck` живым запросом возвращает
   ответ модели; pytest/ruff зелёные.
-- [ ] **T2. Driver loop** — `tasks/task-02.md`
+- [x] **T2. Driver loop** — `tasks/task-02.md` ✅ принято: 56b2acb, live-прогон с самопроверкой
   `loop.py`: цикл completion→tool→результат, реестр тулов как dict
   name→callable, `transcript.jsonl`, остановка по `finish()` /
   max_iterations (`budget_exceeded`). Тулы этой задачи: `run_command`,
